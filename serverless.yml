@@ -1,0 +1,104 @@
+service: voicefoundry-s3-processor
+plugins:
+  - serverless-python-requirements
+  - serverless-s3-deploy
+
+package:
+  exclude:
+    - node_modules/**
+    - .idea/**
+    - .requirements/**
+    - env/**
+    - README.md
+    - package.json
+    - package-lock.json
+    - requirements.txt
+    - .vscode
+
+custom:
+  app_acronym: s3-file-processor
+  default_stage: test
+  stage: ${opt:stage, self:custom.default_stage}
+  stack_name: ${self:custom.app_acronym}-${self:custom.stage}
+  region: ${opt:region, self:provider.region}
+  deletion_policy: Delete
+  dynamodb_table: ${self:custom.stack_name}
+  dynamodb_arn: arn:aws:dynamodb:${self:custom.region}:*:table/${self:custom.dynamodb_table}
+  dynamodb_host: https://dynamodb.${self:custom.region}.amazonaws.com
+  s3_bucket: ${opt:s3_bucket, self:custom.app_acronym}
+  s3_key_base: ${opt:s3_key_base, self:custom.stage}
+  s3_bucket_arn: arn:aws:s3:::${self:custom.s3_bucket}
+  s3_role_resource: ${self:custom.s3_bucket_arn}/${self:custom.s3_key_base}/*
+  lambda_name: ${self:custom.stack_name}-bucket
+  url_default_ttl: 60
+  # s3 auto upload
+  assets:
+      auto: true
+      targets:
+        - bucket: ${self:custom.s3_bucket}
+          files:
+          - source: files/
+            globs: 
+              - '**/*.txt'
+              - '**/*.json'
+              - '**/*.pdf'
+
+provider:
+  name: aws
+  runtime: python3.7
+  region: eu-west-2
+  environment:
+    DYNAMODB_TABLE: ${self:custom.dynamodb_table}
+    DYNAMODB_HOST: ${self:custom.dynamodb_host}
+    REGION: ${self:custom.region}
+    S3_BUCKET: ${self:custom.s3_bucket}
+    S3_KEY_BASE: ${self:custom.s3_key_base}
+    URL_DEFAULT_TTL: ${self:custom.url_default_ttl}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:DescribeTable
+      Resource: ${self:custom.dynamodb_arn}
+    - Effect: Allow
+      Action:
+        - s3:*
+      Resource: 
+        - ${self:custom.s3_role_resource}
+
+functions:
+  insert:
+      handler: function/handler.event
+      name: ${self:custom.lambda_name}
+      description: Called by s3 inserts file contents into dynamodb
+      events:
+        - s3:
+            bucket: ${self:custom.s3_bucket}
+            event: s3:ObjectCreated:*
+            rules:
+              - prefix: ${self:custom.s3_key_base}
+
+resources:
+  Resources:
+    # Comment assetDynamoDbTable if using existing table
+    assetDynamoDbTable:
+      Type: 'AWS::DynamoDB::Table'
+      DeletionPolicy: ${self:custom.deletion_policy}
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: id
+            AttributeType: S
+        KeySchema:
+          -
+            AttributeName: id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:custom.dynamodb_table}
