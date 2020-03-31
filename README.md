@@ -46,8 +46,8 @@ On running `sls deploy` this will:
 ### Prepare Python Dependencies
 
 ```
-git clone
-cd project
+git clone git@github.com:shano/serverless-file-storage.git
+cd serverless-file-storage/
 virtualenv venv/
 source venv/bin/activate
 pip install -r requirements.txt
